@@ -128,7 +128,7 @@ START-OF-SELECTION.
          crusr
          crdat
          crtim
-         xmls
+         XMLXS
     FROM /lkmt/com_xmlas
     INTO TABLE gt_output
    WHERE aplic IN so_aplic
