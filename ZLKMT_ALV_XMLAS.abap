@@ -25,13 +25,15 @@ TYPES:
 TYPES: tt_output TYPE STANDARD TABLE OF ty_output WITH DEFAULT KEY.
 
 *----------------------------------------------------------------------*
-* Local class — defined first so DATA can use TYPE REF TO lcl_events
-* and FORMs can use SET HANDLER without any DEFERRED forward reference.
-* Global variables (gt_output etc.) are referenced in the implementation
-* but declared below; the ABAP compiler resolves them in a second pass.
+* Local class
+*
+* gt_output is a CLASS-DATA so the method body can reference it without
+* any forward-reference to a global DATA declared later. All other code
+* accesses the table via lcl_events=>gt_output.
 *----------------------------------------------------------------------*
 CLASS lcl_events DEFINITION.
   PUBLIC SECTION.
+    CLASS-DATA: gt_output TYPE tt_output.
     METHODS:
       on_double_click
         FOR EVENT double_click
@@ -43,9 +45,9 @@ CLASS lcl_events IMPLEMENTATION.
 
   METHOD on_double_click.
 
-    DATA: lv_xml      TYPE string,
-          lv_subrc    TYPE sysubrc,
-          lcl_xml_doc TYPE REF TO cl_xml_document.
+    DATA: lv_xml     TYPE string,
+          lv_subrc   TYPE sysubrc,
+          lo_xml_doc TYPE REF TO cl_xml_document.
 
     IF row = 0 OR row > lines( gt_output ).
       RETURN.
@@ -59,8 +61,7 @@ CLASS lcl_events IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " Convert XSTRING → STRING before parsing.
-    " XML files are typically UTF-8; adjust codepage if the system differs.
+    " Convert XSTRING → STRING. XML is typically UTF-8; adjust if needed.
     TRY.
       lv_xml = cl_abap_codepage=>convert_from(
                  source   = ls_row-xmls
@@ -72,10 +73,10 @@ CLASS lcl_events IMPLEMENTATION.
       RETURN.
     ENDTRY.
 
-    CREATE OBJECT lcl_xml_doc.
-    lv_subrc = lcl_xml_doc->parse_string( stream = lv_xml ).
+    CREATE OBJECT lo_xml_doc.
+    lv_subrc = lo_xml_doc->parse_string( stream = lv_xml ).
     IF lv_subrc IS INITIAL.
-      lcl_xml_doc->display( ).
+      lo_xml_doc->display( ).
     ELSE.
       MESSAGE |Erro ao interpretar o XML (RC={ lv_subrc }). Verifique o conteúdo.|
               TYPE 'S' DISPLAY LIKE 'E'.
@@ -89,7 +90,6 @@ ENDCLASS.
 * Global data
 *----------------------------------------------------------------------*
 DATA:
-  gt_output  TYPE tt_output,
   go_salv    TYPE REF TO cl_salv_table,
   go_events  TYPE REF TO lcl_events.
 
@@ -122,9 +122,9 @@ START-OF-SELECTION.
          crusr
          crdat
          crtim
-         XMLXS
+         xmls
     FROM /lkmt/com_xmlas
-    INTO TABLE gt_output
+    INTO TABLE lcl_events=>gt_output
    WHERE aplic IN so_aplic
      AND obkey IN so_obkey.
 
@@ -151,7 +151,7 @@ FORM display_alv.
       IMPORTING
         r_salv_table = go_salv
       CHANGING
-        t_table      = gt_output ).
+        t_table      = lcl_events=>gt_output ).
   CATCH cx_salv_msg INTO DATA(lx_msg).
     MESSAGE lx_msg->get_text( ) TYPE 'E'.
     RETURN.
