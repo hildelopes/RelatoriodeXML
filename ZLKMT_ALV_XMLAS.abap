@@ -25,7 +25,8 @@ TYPES:
 TYPES: tt_output TYPE STANDARD TABLE OF ty_output WITH DEFAULT KEY.
 
 *----------------------------------------------------------------------*
-* Forward declaration — must appear before DATA referencing lcl_events
+* Forward declaration — required so DATA go_events TYPE REF TO lcl_events
+* and SELECT-OPTIONS can appear before the full class definition.
 *----------------------------------------------------------------------*
 CLASS lcl_events DEFINITION DEFERRED.
 
@@ -37,10 +38,9 @@ DATA:
   go_salv    TYPE REF TO cl_salv_table,
   go_events  TYPE REF TO lcl_events.
 
-" Auxiliary variables used only to define SELECT-OPTIONS types.
-" SELECT-OPTIONS FOR table-field implicitly tries to build a flat work area
-" for the whole table; /LKMT/COM_XMLAS has RAWSTRING so that fails.
-" Referencing individual-typed DATA variables avoids this restriction.
+" Auxiliary variables used only to give SELECT-OPTIONS their field type.
+" SELECT-OPTIONS FOR table-field implicitly builds a flat work area for
+" the whole table; /LKMT/COM_XMLAS has RAWSTRING so that fails.
 DATA: gv_aplic TYPE /lkmt/com_xmlas-aplic.
 DATA: gv_obkey TYPE /lkmt/com_xmlas-obkey.
 
@@ -52,6 +52,67 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
     so_aplic FOR gv_aplic,
     so_obkey FOR gv_obkey.
 SELECTION-SCREEN END OF BLOCK b1.
+
+*----------------------------------------------------------------------*
+* Local class — must be fully defined before any FORM that uses
+* SET HANDLER ... ->on_double_click, because DEFERRED only allows
+* reference variables and CREATE OBJECT; member access requires the
+* full definition to already be visible.
+*----------------------------------------------------------------------*
+CLASS lcl_events DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_double_click
+        FOR EVENT double_click
+        OF cl_salv_events_table
+        IMPORTING row column.       " event exports ROW and COLUMN
+ENDCLASS.
+
+CLASS lcl_events IMPLEMENTATION.
+
+  METHOD on_double_click.
+
+    DATA: lv_xml      TYPE string,
+          lv_subrc    TYPE sysubrc,
+          lcl_xml_doc TYPE REF TO cl_xml_document.
+
+    IF row = 0 OR row > lines( gt_output ).
+      RETURN.
+    ENDIF.
+
+    DATA(ls_row) = gt_output[ row ].
+
+    IF ls_row-xmls IS INITIAL.
+      MESSAGE 'Nenhum conteúdo XML encontrado para este registro.'
+              TYPE 'S' DISPLAY LIKE 'W'.
+      RETURN.
+    ENDIF.
+
+    " Convert XSTRING → STRING before parsing.
+    " XML files are typically UTF-8; adjust codepage if the system uses another.
+    TRY.
+      lv_xml = cl_abap_codepage=>convert_from(
+                 source   = ls_row-xmls
+                 codepage = 'UTF-8' ).
+    CATCH cx_sy_codepage_converter_init
+          cx_sy_conversion_codepage INTO DATA(lx_cp).
+      MESSAGE |Erro ao converter o conteúdo XML: { lx_cp->get_text( ) }|
+              TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDTRY.
+
+    CREATE OBJECT lcl_xml_doc.
+    lv_subrc = lcl_xml_doc->parse_string( stream = lv_xml ).
+    IF lv_subrc IS INITIAL.
+      lcl_xml_doc->display( ).
+    ELSE.
+      MESSAGE |Erro ao interpretar o XML (RC={ lv_subrc }). Verifique o conteúdo.|
+              TYPE 'S' DISPLAY LIKE 'E'.
+    ENDIF.
+
+  ENDMETHOD.
+
+ENDCLASS.
 
 *----------------------------------------------------------------------*
 * Start of selection
@@ -125,6 +186,8 @@ FORM display_alv.
 
   PERFORM set_column_labels USING lo_columns.
 
+  " Wire up double-click — lcl_events is fully defined above, so member
+  " access via -> is valid here.
   CREATE OBJECT go_events.
   lo_events_salv = go_salv->get_event( ).
   SET HANDLER go_events->on_double_click FOR lo_events_salv.
@@ -160,61 +223,3 @@ FORM set_column_labels USING io_columns TYPE REF TO cl_salv_columns_table.
   set_col_label 'CRTIM'  'Hr Cria.' 'Hora Criação' 'Hora de Criação'.
 
 ENDFORM.
-
-*----------------------------------------------------------------------*
-* Local class: ALV event handler
-*----------------------------------------------------------------------*
-CLASS lcl_events DEFINITION.
-  PUBLIC SECTION.
-    METHODS:
-      on_double_click
-        FOR EVENT double_click
-        OF cl_salv_events_table
-        IMPORTING row col.
-ENDCLASS.
-
-CLASS lcl_events IMPLEMENTATION.
-
-  METHOD on_double_click.
-
-    DATA: lv_xml      TYPE string,
-          lv_subrc    TYPE sysubrc,
-          lcl_xml_doc TYPE REF TO cl_xml_document.
-
-    IF row = 0 OR row > lines( gt_output ).
-      RETURN.
-    ENDIF.
-
-    DATA(ls_row) = gt_output[ row ].
-
-    IF ls_row-xmls IS INITIAL.
-      MESSAGE 'Nenhum conteúdo XML encontrado para este registro.'
-              TYPE 'S' DISPLAY LIKE 'W'.
-      RETURN.
-    ENDIF.
-
-    " Convert XSTRING → STRING before parsing
-    " XML files are typically encoded in UTF-8; adjust codepage if needed.
-    TRY.
-      lv_xml = cl_abap_codepage=>convert_from(
-                 source   = ls_row-xmls
-                 codepage = 'UTF-8' ).
-    CATCH cx_sy_codepage_converter_init
-          cx_sy_conversion_codepage INTO DATA(lx_cp).
-      MESSAGE |Erro ao converter o conteúdo XML: { lx_cp->get_text( ) }|
-              TYPE 'S' DISPLAY LIKE 'E'.
-      RETURN.
-    ENDTRY.
-
-    CREATE OBJECT lcl_xml_doc.
-    lv_subrc = lcl_xml_doc->parse_string( stream = lv_xml ).
-    IF lv_subrc IS INITIAL.
-      lcl_xml_doc->display( ).
-    ELSE.
-      MESSAGE |Erro ao interpretar o XML (RC={ lv_subrc }). Verifique o conteúdo.|
-              TYPE 'S' DISPLAY LIKE 'E'.
-    ENDIF.
-
-  ENDMETHOD.
-
-ENDCLASS.
