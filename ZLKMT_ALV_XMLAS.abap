@@ -25,39 +25,10 @@ TYPES:
 TYPES: tt_output TYPE STANDARD TABLE OF ty_output WITH DEFAULT KEY.
 
 *----------------------------------------------------------------------*
-* Forward declaration — required so DATA go_events TYPE REF TO lcl_events
-* and SELECT-OPTIONS can appear before the full class definition.
-*----------------------------------------------------------------------*
-CLASS lcl_events DEFINITION DEFERRED.
-
-*----------------------------------------------------------------------*
-* Global data
-*----------------------------------------------------------------------*
-DATA:
-  gt_output  TYPE tt_output,
-  go_salv    TYPE REF TO cl_salv_table,
-  go_events  TYPE REF TO lcl_events.
-
-" Auxiliary variables used only to give SELECT-OPTIONS their field type.
-" SELECT-OPTIONS FOR table-field implicitly builds a flat work area for
-" the whole table; /LKMT/COM_XMLAS has RAWSTRING so that fails.
-DATA: gv_aplic TYPE /lkmt/com_xmlas-aplic.
-DATA: gv_obkey TYPE /lkmt/com_xmlas-obkey.
-
-*----------------------------------------------------------------------*
-* Selection screen
-*----------------------------------------------------------------------*
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
-  SELECT-OPTIONS:
-    so_aplic FOR gv_aplic,
-    so_obkey FOR gv_obkey.
-SELECTION-SCREEN END OF BLOCK b1.
-
-*----------------------------------------------------------------------*
-* Local class — must be fully defined before any FORM that uses
-* SET HANDLER ... ->on_double_click, because DEFERRED only allows
-* reference variables and CREATE OBJECT; member access requires the
-* full definition to already be visible.
+* Local class — defined first so DATA can use TYPE REF TO lcl_events
+* and FORMs can use SET HANDLER without any DEFERRED forward reference.
+* Global variables (gt_output etc.) are referenced in the implementation
+* but declared below; the ABAP compiler resolves them in a second pass.
 *----------------------------------------------------------------------*
 CLASS lcl_events DEFINITION.
   PUBLIC SECTION.
@@ -65,7 +36,7 @@ CLASS lcl_events DEFINITION.
       on_double_click
         FOR EVENT double_click
         OF cl_salv_events_table
-        IMPORTING row column.       " event exports ROW and COLUMN
+        IMPORTING row column.
 ENDCLASS.
 
 CLASS lcl_events IMPLEMENTATION.
@@ -89,7 +60,7 @@ CLASS lcl_events IMPLEMENTATION.
     ENDIF.
 
     " Convert XSTRING → STRING before parsing.
-    " XML files are typically UTF-8; adjust codepage if the system uses another.
+    " XML files are typically UTF-8; adjust codepage if the system differs.
     TRY.
       lv_xml = cl_abap_codepage=>convert_from(
                  source   = ls_row-xmls
@@ -113,6 +84,29 @@ CLASS lcl_events IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+
+*----------------------------------------------------------------------*
+* Global data
+*----------------------------------------------------------------------*
+DATA:
+  gt_output  TYPE tt_output,
+  go_salv    TYPE REF TO cl_salv_table,
+  go_events  TYPE REF TO lcl_events.
+
+" Individual-field typed variables for SELECT-OPTIONS.
+" SELECT-OPTIONS FOR /table/-field tries to build a flat work area for the
+" whole table; /LKMT/COM_XMLAS has RAWSTRING so that fails — use DATA vars.
+DATA: gv_aplic TYPE /lkmt/com_xmlas-aplic.
+DATA: gv_obkey TYPE /lkmt/com_xmlas-obkey.
+
+*----------------------------------------------------------------------*
+* Selection screen
+*----------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
+  SELECT-OPTIONS:
+    so_aplic FOR gv_aplic,
+    so_obkey FOR gv_obkey.
+SELECTION-SCREEN END OF BLOCK b1.
 
 *----------------------------------------------------------------------*
 * Start of selection
@@ -186,8 +180,6 @@ FORM display_alv.
 
   PERFORM set_column_labels USING lo_columns.
 
-  " Wire up double-click — lcl_events is fully defined above, so member
-  " access via -> is valid here.
   CREATE OBJECT go_events.
   lo_events_salv = go_salv->get_event( ).
   SET HANDLER go_events->on_double_click FOR lo_events_salv.
