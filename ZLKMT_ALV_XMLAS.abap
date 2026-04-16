@@ -37,13 +37,20 @@ DATA:
   go_salv    TYPE REF TO cl_salv_table,
   go_events  TYPE REF TO lcl_events.
 
+" Auxiliary variables used only to define SELECT-OPTIONS types.
+" SELECT-OPTIONS FOR table-field implicitly tries to build a flat work area
+" for the whole table; /LKMT/COM_XMLAS has RAWSTRING so that fails.
+" Referencing individual-typed DATA variables avoids this restriction.
+DATA: gv_aplic TYPE /lkmt/com_xmlas-aplic.
+DATA: gv_obkey TYPE /lkmt/com_xmlas-obkey.
+
 *----------------------------------------------------------------------*
 * Selection screen
 *----------------------------------------------------------------------*
 SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
   SELECT-OPTIONS:
-    so_aplic FOR /lkmt/com_xmlas-aplic,
-    so_obkey FOR /lkmt/com_xmlas-obkey.
+    so_aplic FOR gv_aplic,
+    so_obkey FOR gv_obkey.
 SELECTION-SCREEN END OF BLOCK b1.
 
 *----------------------------------------------------------------------*
